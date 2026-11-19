@@ -1,0 +1,1671 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1A2B 雙人即時連線對戰</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 Google Fonts: Noto Sans TC & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700;800&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <!-- 載入 Tone.js 用於遊戲音效 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .font-mono-num {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* 自訂捲軸樣式 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(30, 41, 59, 0.5);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(100, 116, 139, 0.6);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(148, 163, 184, 0.8);
+        }
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 0 15px rgba(56, 189, 248, 0.3); }
+            50% { box-shadow: 0 0 25px rgba(56, 189, 248, 0.65); }
+        }
+        .turn-active-glow {
+            animation: pulseGlow 2s infinite;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+
+    <!-- 頂部導覽列 -->
+    <header class="w-full border-b border-slate-800/80 bg-slate-900/70 backdrop-blur-md sticky top-0 z-30">
+        <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20 font-mono-num font-extrabold text-white text-lg">
+                    AB
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-lg font-bold tracking-wide text-white leading-tight">1A2B 雙人連線對決</h1>
+                    <p class="text-[11px] text-slate-400">四位不重複數字 • 隨機先後攻</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <!-- 音效開關 -->
+                <button id="btn-sound-toggle" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition border border-slate-700/60" title="切換音效">
+                    <svg id="icon-sound-on" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>
+                    <svg id="icon-sound-off" class="w-5 h-5 hidden text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path></svg>
+                </button>
+                <!-- 規則說明按鈕 -->
+                <button id="btn-rules" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-medium transition border border-slate-700/60">
+                    規則說明
+                </button>
+                <!-- 離開房間按鈕 (在房間內才顯示) -->
+                <button id="btn-leave-room" class="hidden px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 text-rose-300 text-xs sm:text-sm font-medium transition border border-rose-800/60">
+                    離開房間
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 全域通知訊息框 (取代 alert) -->
+    <div id="toast-container" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none w-full max-w-sm px-4"></div>
+
+    <!-- 主內容區 -->
+    <main class="flex-1 w-full max-w-5xl mx-auto px-4 py-6 flex flex-col justify-center">
+
+        <!-- 載入中畫面 -->
+        <section id="view-loading" class="flex flex-col items-center justify-center py-20 text-center">
+            <div class="w-12 h-12 border-4 border-sky-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p class="text-slate-300 font-medium">正在連線至對戰伺服器...</p>
+        </section>
+
+        <!-- 1. 大廳畫面 (建立或加入房間) -->
+        <section id="view-lobby" class="hidden max-w-md mx-auto w-full space-y-6">
+            <div class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl">
+                <div class="text-center mb-6">
+                    <span class="inline-block px-3 py-1 rounded-full bg-sky-500/10 text-sky-400 text-xs font-semibold border border-sky-500/20 mb-2">
+                        即時雙人對戰
+                    </span>
+                    <h2 class="text-2xl font-extrabold text-white">準備好鬥智了嗎？</h2>
+                    <p class="text-sm text-slate-400 mt-1">建立房間並將房號分享給好友，或輸入房號加入對戰</p>
+                </div>
+
+                <!-- 玩家暱稱輸入 -->
+                <div class="mb-6">
+                    <label for="input-nickname" class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">你的玩家暱稱</label>
+                    <input type="text" id="input-nickname" maxlength="12" placeholder="輸入暱稱 (例如：神算子)"
+                        class="w-full px-4 py-3 rounded-2xl bg-slate-950 border border-slate-700/80 text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/20 transition text-sm sm:text-base">
+                </div>
+
+                <!-- 建立新房間 -->
+                <button id="btn-create-room" class="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-base shadow-lg shadow-sky-500/25 transition transform active:scale-[0.98] flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    建立新對戰房間
+                </button>
+
+                <div class="relative my-6 flex items-center justify-center">
+                    <div class="border-t border-slate-800 w-full"></div>
+                    <span class="bg-slate-900 px-3 text-xs text-slate-500 font-medium">或者加入現有房間</span>
+                    <div class="border-t border-slate-800 w-full"></div>
+                </div>
+
+                <!-- 加入房間 -->
+                <div class="flex gap-2">
+                    <input type="text" id="input-room-code" maxlength="6" placeholder="輸入 5 碼房號"
+                        class="flex-1 px-4 py-3 rounded-2xl bg-slate-950 border border-slate-700/80 text-white font-mono-num uppercase tracking-widest text-center placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition text-base">
+                    <button id="btn-join-room" class="px-6 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm sm:text-base border border-slate-700 transition transform active:scale-[0.98]">
+                        加入
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. 房間內：等待對手 & 設定秘密數字階段 -->
+        <section id="view-setup" class="hidden max-w-2xl mx-auto w-full space-y-5">
+            <!-- 房號資訊卡片 -->
+            <div class="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
+                <div class="text-center sm:text-left">
+                    <span class="text-xs text-slate-400 block">對戰房間代碼（點擊複製分享給朋友）</span>
+                    <div class="flex items-center justify-center sm:justify-start gap-2 mt-1">
+                        <span id="display-room-code" class="font-mono-num text-3xl font-extrabold tracking-widest text-sky-400">-----</span>
+                        <button id="btn-copy-code" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition border border-slate-700" title="複製房號">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-950/80 border border-slate-800 text-xs text-slate-300">
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></span>
+                    <span id="setup-status-banner">等待雙方設定謎底數字...</span>
+                </div>
+            </div>
+
+            <!-- 玩家連線與準備狀態列 -->
+            <div class="grid grid-cols-2 gap-3 sm:gap-4">
+                <!-- 玩家 1 卡片 -->
+                <div id="card-p1" class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-bold px-2 py-0.5 rounded-md bg-sky-500/20 text-sky-400">玩家 1 (房主)</span>
+                        <span id="p1-you-badge" class="hidden text-[11px] font-bold text-emerald-400">● 你</span>
+                    </div>
+                    <p id="p1-name-setup" class="font-bold text-white text-base sm:text-lg truncate">等待加入...</p>
+                    <div id="p1-ready-status" class="mt-2 text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-slate-500"></span> 尚未設定數字
+                    </div>
+                </div>
+
+                <!-- 玩家 2 卡片 -->
+                <div id="card-p2" class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-bold px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-400">玩家 2 (挑戰者)</span>
+                        <span id="p2-you-badge" class="hidden text-[11px] font-bold text-emerald-400">● 你</span>
+                    </div>
+                    <p id="p2-name-setup" class="font-bold text-slate-500 text-base sm:text-lg truncate">等待對手加入...</p>
+                    <div id="p2-ready-status" class="mt-2 text-xs font-medium text-slate-500 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-slate-600"></span> 等待連線
+                    </div>
+                </div>
+            </div>
+
+            <!-- 設定你的 4 位數秘密數字面板 -->
+            <div class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 shadow-2xl">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-white">設定你的秘密謎底</h3>
+                        <p class="text-xs text-slate-400">請輸入 <span class="text-sky-400 font-semibold">4 個不重複</span> 的數字 (0~9)，讓對手來猜！</p>
+                    </div>
+                    <button id="btn-random-secret" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs sm:text-sm font-semibold border border-slate-700 transition flex items-center gap-1.5">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        隨機產生
+                    </button>
+                </div>
+
+                <!-- 4格數字顯示框 -->
+                <div class="flex justify-center gap-3 my-5" id="secret-boxes">
+                    <div class="secret-digit-box w-14 h-16 sm:w-16 sm:h-20 rounded-2xl bg-slate-950 border-2 border-slate-700 flex items-center justify-center font-mono-num text-3xl sm:text-4xl font-extrabold text-white"></div>
+                    <div class="secret-digit-box w-14 h-16 sm:w-16 sm:h-20 rounded-2xl bg-slate-950 border-2 border-slate-700 flex items-center justify-center font-mono-num text-3xl sm:text-4xl font-extrabold text-white"></div>
+                    <div class="secret-digit-box w-14 h-16 sm:w-16 sm:h-20 rounded-2xl bg-slate-950 border-2 border-slate-700 flex items-center justify-center font-mono-num text-3xl sm:text-4xl font-extrabold text-white"></div>
+                    <div class="secret-digit-box w-14 h-16 sm:w-16 sm:h-20 rounded-2xl bg-slate-950 border-2 border-slate-700 flex items-center justify-center font-mono-num text-3xl sm:text-4xl font-extrabold text-white"></div>
+                </div>
+
+                <!-- 設定階段專用數字鍵盤 -->
+                <div id="setup-keypad" class="grid grid-cols-6 gap-2 max-w-md mx-auto mb-5">
+                    <!-- JS 動態產生 0-9 與退格/清除 -->
+                </div>
+
+                <button id="btn-lock-secret" class="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-base shadow-lg shadow-emerald-600/20 transition transform active:scale-[0.98]">
+                    鎖定秘密數字並準備
+                </button>
+            </div>
+        </section>
+
+        <!-- 3. 對戰進行中 & 結算畫面 -->
+        <section id="view-game" class="hidden w-full space-y-4">
+            
+            <!-- 頂部回合狀態橫幅 -->
+            <div id="turn-banner" class="rounded-2xl p-4 border transition-all duration-300 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900 border-slate-800">
+                <div class="flex items-center gap-3">
+                    <div id="turn-indicator-dot" class="w-3.5 h-3.5 rounded-full bg-sky-400"></div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h2 id="turn-title" class="text-lg sm:text-xl font-extrabold text-white">輪到你了！</h2>
+                            <span id="first-player-badge" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">隨機先攻抽籤完成</span>
+                        </div>
+                        <p id="turn-subtitle" class="text-xs text-slate-400">請輸入 4 個不重複數字來猜測對手的謎底</p>
+                    </div>
+                </div>
+
+                <!-- 顯示自己的謎底 (可點擊隱藏/顯示) -->
+                <div class="flex items-center gap-2 bg-slate-950/90 px-3.5 py-2 rounded-xl border border-slate-800">
+                    <span class="text-xs text-slate-400">你的謎底：</span>
+                    <span id="my-secret-display" class="font-mono-num font-bold text-base tracking-widest text-amber-400">••••</span>
+                    <button id="btn-toggle-my-secret" class="text-slate-400 hover:text-white p-1" title="顯示/隱藏你的謎底">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 遊戲結束結算卡片 (僅在 finished 狀態顯示) -->
+            <div id="gameover-panel" class="hidden rounded-3xl p-6 bg-gradient-to-r from-indigo-950/90 via-slate-900 to-sky-950/90 border-2 border-amber-500/50 shadow-2xl text-center space-y-4">
+                <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 text-3xl mb-1">
+                    🏆
+                </div>
+                <h2 id="winner-title" class="text-2xl sm:text-3xl font-black text-white">恭喜獲勝！</h2>
+                <p id="winner-subtitle" class="text-sm text-slate-300">雙方謎底已公開</p>
+                
+                <div class="grid grid-cols-2 gap-3 max-w-md mx-auto pt-2">
+                    <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3">
+                        <span id="reveal-p1-name" class="text-xs text-slate-400 block truncate">玩家 1</span>
+                        <span id="reveal-p1-secret" class="font-mono-num text-2xl font-extrabold text-sky-400 tracking-widest mt-1 block">----</span>
+                    </div>
+                    <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3">
+                        <span id="reveal-p2-name" class="text-xs text-slate-400 block truncate">玩家 2</span>
+                        <span id="reveal-p2-secret" class="font-mono-num text-2xl font-extrabold text-indigo-400 tracking-widest mt-1 block">----</span>
+                    </div>
+                </div>
+
+                <div class="pt-2">
+                    <button id="btn-rematch" class="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-base shadow-lg shadow-amber-500/25 transition transform active:scale-[0.98]">
+                        再來一局（重新隨機先後攻）
+                    </button>
+                </div>
+            </div>
+
+            <!-- 主對戰雙欄區：左側輸入與筆記本 / 右側雙方歷史紀錄 -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                
+                <!-- 左欄 (5格)：輸入猜測 + 推理筆記本 -->
+                <div class="lg:col-span-5 space-y-4">
+                    <!-- 猜測輸入面板 -->
+                    <div id="guess-input-card" class="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl transition">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-sm font-bold text-white">輸入你的猜測</span>
+                            <span id="guess-turn-count" class="text-xs font-mono-num px-2.5 py-1 rounded-full bg-slate-800 text-sky-400">第 1 次嘗試</span>
+                        </div>
+
+                        <!-- 4格猜測數字框 -->
+                        <div class="flex justify-center gap-2.5 my-4">
+                            <div class="guess-digit-box w-14 h-16 rounded-2xl bg-slate-950 border-2 border-slate-700 flex items-center justify-center font-mono-num text-3xl font-extrabold text-white"></div>
+                            <div class="guess-digit-box w-14 h-16 rounded-2xl bg-slate-950 border-2 border-slate-700 flex items-center justify-center font-mono-num text-3xl font-extrabold text-white"></div>
+                            <div class="guess-digit-box w-14 h-16 rounded-2xl bg-slate-950 border-2 border-slate-700 flex items-center justify-center font-mono-num text-3xl font-extrabold text-white"></div>
+                            <div class="guess-digit-box w-14 h-16 rounded-2xl bg-slate-950 border-2 border-slate-700 flex items-center justify-center font-mono-num text-3xl font-extrabold text-white"></div>
+                        </div>
+
+                        <!-- 對戰數字鍵盤 -->
+                        <div id="game-keypad" class="grid grid-cols-6 gap-1.5 mb-4">
+                            <!-- JS 動態產生 -->
+                        </div>
+
+                        <button id="btn-submit-guess" class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-white font-bold text-base shadow-lg shadow-sky-500/20 transition transform active:scale-[0.98]">
+                            送出猜測
+                        </button>
+                    </div>
+
+                    <!-- 推理筆記本 (4x10 位置矩陣 + 快捷排除 + 自由備忘) -->
+                    <div class="bg-slate-900/90 border border-slate-800 rounded-3xl p-4 sm:p-5 shadow-xl space-y-3">
+                        <div class="flex items-start justify-between gap-2">
+                            <div>
+                                <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-1.5">
+                                    <span>推理筆記本</span>
+                                    <span class="text-[11px] font-normal px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-400 border border-sky-500/30">4×10 位置矩陣</span>
+                                </h3>
+                                <p class="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+                                    點格子切換：<span class="text-slate-300">空白</span> → <span class="text-rose-400 font-bold">✕ 排除此位</span> → <span class="text-emerald-400 font-bold">✓ 鎖定此位</span>；點左側數字可整排劃掉。
+                                </p>
+                            </div>
+                            <button id="btn-reset-notes" class="shrink-0 text-xs px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-950/80 hover:text-rose-300 text-slate-300 border border-slate-700/80 transition">
+                                清空筆記
+                            </button>
+                        </div>
+
+                        <!-- 已鎖定位置預覽與一鍵填入 -->
+                        <div class="flex items-center justify-between bg-slate-950/90 border border-slate-800 rounded-2xl px-3.5 py-2">
+                            <div class="flex items-center gap-2">
+                                <span class="text-[11px] text-slate-400">目前鎖定：</span>
+                                <div id="notebook-locked-preview" class="flex items-center gap-1.5 font-mono-num text-base font-extrabold">
+                                    <span class="w-6 h-7 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-500">_</span>
+                                    <span class="w-6 h-7 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-500">_</span>
+                                    <span class="w-6 h-7 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-500">_</span>
+                                    <span class="w-6 h-7 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-500">_</span>
+                                </div>
+                            </div>
+                            <button id="btn-apply-locked" class="text-xs px-3 py-1.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold transition shadow-sm" disabled>
+                                填入猜測框
+                            </button>
+                        </div>
+
+                        <!-- 4x10 互動位置矩陣 -->
+                        <div class="bg-slate-950/70 border border-slate-800/90 rounded-2xl p-2.5">
+                            <!-- 欄位標題 -->
+                            <div class="grid grid-cols-5 gap-1.5 pb-1.5 mb-1.5 border-b border-slate-800/80 text-center text-[11px] font-bold text-slate-400">
+                                <div class="text-slate-500">數字</div>
+                                <div>第 1 位</div>
+                                <div>第 2 位</div>
+                                <div>第 3 位</div>
+                                <div>第 4 位</div>
+                            </div>
+                            <!-- 0~9 矩陣列 (JS 動態產生) -->
+                            <div id="scratchpad-matrix" class="space-y-1"></div>
+                        </div>
+
+                        <!-- 自由邏輯備忘欄 -->
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <label for="input-freeform-note" class="text-[11px] font-semibold text-slate-400">自由邏輯備忘（自動與歷史紀錄連動標色）</label>
+                            </div>
+                            <textarea id="input-freeform-note" rows="2" placeholder="例如：1234 中只有一個對、7 一定在後兩位..."
+                                class="w-full px-3 py-2 rounded-xl bg-slate-950/90 border border-slate-800 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-sky-500/70 resize-none leading-relaxed"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右欄 (7格)：雙方即時猜測歷史紀錄 -->
+                <div class="lg:col-span-7 bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-xl flex flex-col">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <svg class="w-5 h-5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                            雙方猜測紀錄
+                        </h3>
+                        <!-- 手機版切換頁籤 -->
+                        <div class="flex sm:hidden bg-slate-950 p-1 rounded-xl border border-slate-800">
+                            <button id="tab-my-logs" class="px-3 py-1 rounded-lg text-xs font-bold bg-sky-600 text-white">我的紀錄</button>
+                            <button id="tab-opp-logs" class="px-3 py-1 rounded-lg text-xs font-bold text-slate-400">對手紀錄</button>
+                        </div>
+                    </div>
+
+                    <!-- 雙欄對照區 -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 min-h-[320px]">
+                        <!-- 我的猜測紀錄欄 -->
+                        <div id="col-my-logs" class="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3 flex flex-col">
+                            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                                <span id="header-my-name" class="text-xs font-bold text-sky-400 truncate">你的猜測</span>
+                                <span id="badge-my-count" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono-num">0 次</span>
+                            </div>
+                            <div id="list-my-guesses" class="flex-1 overflow-y-auto max-h-[360px] space-y-2 pr-1">
+                                <div class="text-center text-xs text-slate-500 py-10">尚無猜測紀錄</div>
+                            </div>
+                        </div>
+
+                        <!-- 對手的猜測紀錄欄 -->
+                        <div id="col-opp-logs" class="hidden sm:flex bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3 flex-col">
+                            <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+                                <span id="header-opp-name" class="text-xs font-bold text-indigo-400 truncate">對手的猜測</span>
+                                <span id="badge-opp-count" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono-num">0 次</span>
+                            </div>
+                            <div id="list-opp-guesses" class="flex-1 overflow-y-auto max-h-[360px] space-y-2 pr-1">
+                                <div class="text-center text-xs text-slate-500 py-10">尚無猜測紀錄</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- 規則說明彈窗 -->
+    <div id="modal-rules" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="text-lg font-bold text-white">1A2B 遊戲規則說明</h3>
+                <button id="btn-close-rules" class="text-slate-400 hover:text-white p-1">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="space-y-3 text-sm text-slate-300 leading-relaxed">
+                <p>1. <strong class="text-white">設定謎底：</strong>雙方各自設定一組 <span class="text-sky-400 font-bold">4 位不重複的數字</span>（0~9 可在任何位置，包含開頭為 0）。</p>
+                <p>2. <strong class="text-white">隨機先後攻：</strong>雙方鎖定數字後，系統會 <span class="text-amber-400 font-bold">50% 隨機抽籤</span> 決定由誰先開始猜。</p>
+                <p>3. <strong class="text-white">提示判定：</strong></p>
+                <ul class="list-disc pl-5 space-y-1 text-slate-400">
+                    <li><span class="text-emerald-400 font-bold font-mono-num">A</span> 代表「數字正確」且「位置也正確」。</li>
+                    <li><span class="text-amber-400 font-bold font-mono-num">B</span> 代表「數字正確」但「位置不正確」。</li>
+                </ul>
+                <p class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs text-slate-400">
+                    例如：謎底為 <span class="font-mono-num text-white">1234</span>，猜測 <span class="font-mono-num text-white">1456</span>，則結果為 <span class="font-mono-num text-emerald-400 font-bold">1A</span><span class="font-mono-num text-amber-400 font-bold">1B</span>（1 位置正確、4 位置錯誤）。
+                </p>
+                <p>4. <strong class="text-white">勝利條件：</strong>最先猜出 <span class="text-emerald-400 font-bold font-mono-num">4A0B</span> 的玩家獲勝！</p>
+            </div>
+            <button id="btn-confirm-rules" class="w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-sm transition">
+                我知道了
+            </button>
+        </div>
+    </div>
+
+    <!-- 頁尾 -->
+    <footer class="w-full text-center py-4 text-xs text-slate-600">
+        1A2B 雙人即時連線對戰 • 支援鍵盤直接輸入數字與 Enter 送出
+    </footer>
+
+    <!-- Firebase SDK 與核心遊戲邏輯 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ==========================================
+        // 1. Firebase 初始化與驗證設定 (支援 GitHub Pages 獨立部署)
+        // ==========================================
+        // 【GitHub Pages 獨立部署設定區】
+        // 若您要上傳到 GitHub Pages 讓朋友直接開網址玩，請至 Firebase Console 建立免費專案，
+        // 啟用「Anonymous 匿名登入」與「Cloud Firestore」，並將您的 firebaseConfig 貼在下方：
+        const STANDALONE_FIREBASE_CONFIG = {
+            apiKey: "AIzaSyDSR_yAdzvS9SnPHDskZaix-2GcI4BFJfs",
+            authDomain: "a2b-5f786.firebaseapp.com",
+            projectId: "a2b-5f786",
+            storageBucket: "a2b-5f786.firebasestorage.app",
+            messagingSenderId: "778937491381",
+            appId: "1:778937491381:web:01f05c652dbeeb128403fc",
+            measurementId: "G-M062HK3QNF"
+        };
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'bulls-and-cows-1a2b';
+        const envConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const firebaseConfig = (envConfig && envConfig.apiKey) ? envConfig : STANDALONE_FIREBASE_CONFIG;
+        const isConfigReady = Boolean(firebaseConfig && firebaseConfig.apiKey);
+
+        let app = null;
+        let auth = null;
+        let db = null;
+
+        if (isConfigReady) {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        }
+
+        // ==========================================
+        // 2. 遊戲全域狀態管理
+        // ==========================================
+        const state = {
+            user: null,
+            userId: null,
+            nickname: '',
+            roomId: null,
+            roomData: null,
+            unsubscribeRoom: null,
+            
+            // 本地輸入緩衝
+            secretInput: [], // 設定階段的4位數陣列
+            guessInput: [],  // 對戰階段的4位數陣列
+            // 推理筆記本狀態: 10(數字 0~9) x 4(位置 0~3)
+            // 0 = 空白未定, 1 = 排除(✕), 2 = 確定鎖定(✓)
+            notesMatrix: Array.from({ length: 10 }, () => [0, 0, 0, 0]),
+            freeformNote: '',
+            
+            // 音效開關
+            soundEnabled: true,
+            showMySecret: false,
+            lastTurnNotified: null
+        };
+
+        // ==========================================
+        // 3. Tone.js 音效合成器
+        // ==========================================
+        const soundFX = {
+            synth: null,
+            init() {
+                if (!this.synth && typeof Tone !== 'undefined') {
+                    this.synth = new Tone.PolySynth(Tone.Synth).toDestination();
+                    this.synth.volume.value = -10;
+                }
+            },
+            playClick() {
+                if (!state.soundEnabled) return;
+                this.init();
+                try { this.synth?.triggerAttackRelease("C5", "32n"); } catch (e) {}
+            },
+            playSubmit() {
+                if (!state.soundEnabled) return;
+                this.init();
+                try {
+                    const now = Tone.now();
+                    this.synth?.triggerAttackRelease("E5", "16n", now);
+                    this.synth?.triggerAttackRelease("G5", "16n", now + 0.08);
+                } catch (e) {}
+            },
+            playYourTurn() {
+                if (!state.soundEnabled) return;
+                this.init();
+                try {
+                    const now = Tone.now();
+                    this.synth?.triggerAttackRelease("A4", "16n", now);
+                    this.synth?.triggerAttackRelease("E5", "8n", now + 0.1);
+                } catch (e) {}
+            },
+            playWin() {
+                if (!state.soundEnabled) return;
+                this.init();
+                try {
+                    const now = Tone.now();
+                    this.synth?.triggerAttackRelease("C5", "16n", now);
+                    this.synth?.triggerAttackRelease("E5", "16n", now + 0.1);
+                    this.synth?.triggerAttackRelease("G5", "16n", now + 0.2);
+                    this.synth?.triggerAttackRelease("C6", "4n", now + 0.3);
+                } catch (e) {}
+            },
+            playLose() {
+                if (!state.soundEnabled) return;
+                this.init();
+                try {
+                    const now = Tone.now();
+                    this.synth?.triggerAttackRelease("E4", "8n", now);
+                    this.synth?.triggerAttackRelease("C4", "4n", now + 0.18);
+                } catch (e) {}
+            }
+        };
+
+        // 渲染 4x10 推理筆記本矩陣與鎖定預覽
+        function renderScratchpad() {
+            const matrixEl = document.getElementById('scratchpad-matrix');
+            if (!matrixEl) return;
+            matrixEl.innerHTML = '';
+
+            // 檢查每一欄(0~3)是否有被確定鎖定(狀態為2)的數字
+            const lockedDigits = [null, null, null, null];
+            for (let col = 0; col < 4; col++) {
+                for (let digit = 0; digit <= 9; digit++) {
+                    if (state.notesMatrix[digit][col] === 2) {
+                        lockedDigits[col] = String(digit);
+                    }
+                }
+            }
+
+            // 更新頂部鎖定預覽與「填入猜測框」按鈕
+            const previewEl = document.getElementById('notebook-locked-preview');
+            const applyBtn = document.getElementById('btn-apply-locked');
+            if (previewEl && applyBtn) {
+                let hasAnyLocked = false;
+                previewEl.innerHTML = lockedDigits.map(d => {
+                    if (d !== null) {
+                        hasAnyLocked = true;
+                        return `<span class="w-6 h-7 rounded-lg bg-emerald-950/90 border border-emerald-500/80 flex items-center justify-center text-emerald-300 shadow-sm">${d}</span>`;
+                    }
+                    return `<span class="w-6 h-7 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-600">_</span>`;
+                }).join('');
+                applyBtn.disabled = !hasAnyLocked;
+            }
+
+            // 產生 0~9 共 10 列
+            for (let digit = 0; digit <= 9; digit++) {
+                const rowStates = state.notesMatrix[digit];
+                const isAllEliminated = rowStates.every(s => s === 1);
+                const hasConfirmedPos = rowStates.some(s => s === 2);
+
+                const rowDiv = document.createElement('div');
+                rowDiv.className = `grid grid-cols-5 gap-1.5 items-center rounded-xl transition ${isAllEliminated ? 'opacity-45' : ''}`;
+
+                // 左側數字快捷按鈕（點擊可整排排除或恢復）
+                const labelBtn = document.createElement('button');
+                labelBtn.type = 'button';
+                labelBtn.title = isAllEliminated ? `點擊恢復數字 ${digit}` : `點擊整排排除數字 ${digit}`;
+                labelBtn.textContent = digit;
+
+                let labelStyle = 'bg-slate-800/90 hover:bg-slate-700 text-slate-200 border-slate-700/80';
+                if (isAllEliminated) {
+                    labelStyle = 'bg-rose-950/60 hover:bg-rose-900/60 text-rose-400 border-rose-900/70 line-through';
+                } else if (hasConfirmedPos) {
+                    labelStyle = 'bg-emerald-950/80 hover:bg-emerald-900/80 text-emerald-300 border-emerald-500/60';
+                }
+
+                labelBtn.className = `h-8 rounded-lg border font-mono-num font-extrabold text-sm flex items-center justify-center transition ${labelStyle}`;
+                labelBtn.addEventListener('click', () => {
+                    soundFX.playClick();
+                    if (isAllEliminated) {
+                        state.notesMatrix[digit] = [0, 0, 0, 0];
+                    } else {
+                        state.notesMatrix[digit] = [1, 1, 1, 1];
+                    }
+                    renderScratchpad();
+                    refreshHistoryHighlights();
+                });
+                rowDiv.appendChild(labelBtn);
+
+                // 4 個位置格子
+                for (let col = 0; col < 4; col++) {
+                    const cellState = rowStates[col];
+                    const isDimmedByColLock = lockedDigits[col] !== null && lockedDigits[col] !== String(digit) && cellState === 0;
+
+                    const cellBtn = document.createElement('button');
+                    cellBtn.type = 'button';
+
+                    let cellClass = 'bg-slate-900/90 hover:bg-slate-800 border-slate-800 text-slate-500';
+                    let cellSymbol = '·';
+
+                    if (cellState === 1) {
+                        cellClass = 'bg-rose-950/50 hover:bg-rose-950/80 border-rose-800/60 text-rose-400';
+                        cellSymbol = '✕';
+                    } else if (cellState === 2) {
+                        cellClass = 'bg-emerald-600/30 hover:bg-emerald-600/40 border-emerald-400 text-emerald-300 shadow-inner';
+                        cellSymbol = '✓';
+                    } else if (isDimmedByColLock) {
+                        cellClass = 'bg-slate-950/50 hover:bg-slate-800 border-slate-800/40 text-slate-700';
+                    }
+
+                    cellBtn.className = `h-8 rounded-lg border font-mono-num font-bold text-sm flex items-center justify-center transition ${cellClass}`;
+                    cellBtn.textContent = cellSymbol;
+
+                    cellBtn.addEventListener('click', () => {
+                        soundFX.playClick();
+                        const nextState = (cellState + 1) % 3;
+                        state.notesMatrix[digit][col] = nextState;
+
+                        // 若將此格設為「✓ 鎖定(2)」，自動取消同欄其他數字的「✓ 鎖定」及同列其他位置的「✓ 鎖定」（因為 4 位數字不重複）
+                        if (nextState === 2) {
+                            for (let r = 0; r <= 9; r++) {
+                                if (r !== digit && state.notesMatrix[r][col] === 2) {
+                                    state.notesMatrix[r][col] = 0;
+                                }
+                            }
+                            for (let c = 0; c < 4; c++) {
+                                if (c !== col && state.notesMatrix[digit][c] === 2) {
+                                    state.notesMatrix[digit][c] = 0;
+                                }
+                            }
+                        }
+
+                        renderScratchpad();
+                        refreshHistoryHighlights();
+                    });
+
+                    rowDiv.appendChild(cellBtn);
+                }
+
+                matrixEl.appendChild(rowDiv);
+            }
+        }
+
+        // 重新渲染歷史紀錄以即時反映筆記本標記顏色
+        function refreshHistoryHighlights() {
+            if (!state.roomData || !getMyRole()) return;
+            const myRole = getMyRole();
+            const oppRole = myRole === 'p1' ? 'p2' : 'p1';
+            renderGuessList('list-my-guesses', state.roomData[myRole].guesses, true);
+            renderGuessList('list-opp-guesses', state.roomData[oppRole].guesses, false);
+        }
+
+        // 依據筆記本狀態取得歷史猜測單一數字的連動樣式
+        function getHistoryDigitBadgeStyle(digitChar, posIndex) {
+            const d = Number(digitChar);
+            if (isNaN(d) || !state.notesMatrix[d]) return 'text-white';
+
+            const rowStates = state.notesMatrix[d];
+            const cellState = rowStates[posIndex];
+            const isAllEliminated = rowStates.every(s => s === 1);
+            const isConfirmedElsewhere = rowStates.some((s, idx) => s === 2 && idx !== posIndex);
+
+            if (cellState === 2) {
+                // 確定就是這個位置 -> 綠色高亮
+                return 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/60 rounded px-1';
+            }
+            if (isAllEliminated) {
+                // 整個數字已完全排除 -> 暗淡刪除線
+                return 'text-slate-600 line-through';
+            }
+            if (isConfirmedElsewhere) {
+                // 確定包含此數字但在別的位置 -> 琥珀色提示
+                return 'bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded px-1';
+            }
+            if (cellState === 1) {
+                // 僅排除此位置 -> 淡紅色微標記
+                return 'text-rose-400/80 underline decoration-rose-500/60 decoration-wavy';
+            }
+            return 'text-white';
+        }
+
+        // ==========================================
+        // 4. 工具函式
+        // ==========================================
+        
+        // 顯示頂部 Toast 通知 (取代 alert)
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const colors = {
+                info: 'bg-slate-800 border-slate-700 text-white',
+                success: 'bg-emerald-950/95 border-emerald-600/60 text-emerald-200',
+                error: 'bg-rose-950/95 border-rose-600/60 text-rose-200',
+                warning: 'bg-amber-950/95 border-amber-600/60 text-amber-200'
+            };
+            
+            toast.className = `px-4 py-2.5 rounded-2xl border shadow-xl text-sm font-medium backdrop-blur-md transition-all duration-300 transform translate-y-[-10px] opacity-0 ${colors[type] || colors.info}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-[-10px]', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-[-10px]');
+                setTimeout(() => toast.remove(), 300);
+            }, 2800);
+        }
+
+        // 切換顯示畫面
+        function switchView(viewName) {
+            ['view-loading', 'view-lobby', 'view-setup', 'view-game'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(`view-${viewName}`).classList.remove('hidden');
+
+            const leaveBtn = document.getElementById('btn-leave-room');
+            if (viewName === 'setup' || viewName === 'game') {
+                leaveBtn.classList.remove('hidden');
+            } else {
+                leaveBtn.classList.add('hidden');
+            }
+        }
+
+        // 產生 5 碼隨機大寫英數房號 (排除易混淆字元 I, O, 0, 1)
+        function generateRoomCode() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            let code = '';
+            for (let i = 0; i < 5; i++) {
+                code += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return code;
+        }
+
+        // 隨機產生 4 位不重複數字陣列
+        function generateRandom4Digits() {
+            const pool = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+            return pool.slice(0, 4);
+        }
+
+        // 計算幾A幾B
+        function calculateAB(secretStr, guessStr) {
+            let a = 0;
+            let b = 0;
+            for (let i = 0; i < 4; i++) {
+                if (guessStr[i] === secretStr[i]) {
+                    a++;
+                } else if (secretStr.includes(guessStr[i])) {
+                    b++;
+                }
+            }
+            return { a, b };
+        }
+
+        // 取得 Firestore 房間文件參考 (嚴格遵守 Rule 1 路徑規範)
+        function getRoomDocRef(roomId) {
+            return doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+        }
+
+        // ==========================================
+        // 5. 虛擬鍵盤與筆記本 UI 初始化
+        // ==========================================
+        function buildKeypad(containerId, targetArrayName, renderBoxesFn) {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+
+            // 數字 0-9
+            for (let num = 0; num <= 9; num++) {
+                const digit = String(num);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.dataset.digit = digit;
+                btn.textContent = digit;
+                btn.className = 'keypad-btn py-2.5 sm:py-3 rounded-xl bg-slate-800 hover:bg-slate-700 active:bg-sky-600 text-white font-mono-num font-bold text-lg border border-slate-700/80 transition disabled:opacity-30 disabled:pointer-events-none';
+                
+                btn.addEventListener('click', () => {
+                    soundFX.playClick();
+                    const arr = state[targetArrayName];
+                    if (arr.length < 4 && !arr.includes(digit)) {
+                        arr.push(digit);
+                        renderBoxesFn();
+                    }
+                });
+                container.appendChild(btn);
+            }
+
+            // 清除鍵 (C)
+            const btnClear = document.createElement('button');
+            btnClear.type = 'button';
+            btnClear.textContent = '清除';
+            btnClear.className = 'py-2.5 sm:py-3 rounded-xl bg-slate-800/80 hover:bg-rose-950 text-rose-400 font-bold text-xs sm:text-sm border border-slate-700/80 transition';
+            btnClear.addEventListener('click', () => {
+                soundFX.playClick();
+                state[targetArrayName] = [];
+                renderBoxesFn();
+            });
+            container.appendChild(btnClear);
+
+            // 退格鍵 (⌫)
+            const btnBack = document.createElement('button');
+            btnBack.type = 'button';
+            btnBack.innerHTML = '⌫';
+            btnBack.className = 'py-2.5 sm:py-3 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-amber-400 font-bold text-base border border-slate-700/80 transition';
+            btnBack.addEventListener('click', () => {
+                soundFX.playClick();
+                state[targetArrayName].pop();
+                renderBoxesFn();
+            });
+            container.appendChild(btnBack);
+        }
+
+        // 更新設定階段數字框與鍵盤禁用狀態
+        function renderSecretBoxes() {
+            const boxes = document.querySelectorAll('.secret-digit-box');
+            boxes.forEach((box, idx) => {
+                const val = state.secretInput[idx] || '';
+                box.textContent = val;
+                if (val) {
+                    box.classList.add('border-sky-500', 'bg-slate-900');
+                    box.classList.remove('border-slate-700', 'bg-slate-950');
+                } else {
+                    box.classList.remove('border-sky-500', 'bg-slate-900');
+                    box.classList.add('border-slate-700', 'bg-slate-950');
+                }
+            });
+
+            // 禁用已選過的數字按鈕
+            document.querySelectorAll('#setup-keypad .keypad-btn').forEach(btn => {
+                btn.disabled = state.secretInput.includes(btn.dataset.digit) || state.secretInput.length >= 4;
+            });
+        }
+
+        // 更新對戰階段猜測框與鍵盤禁用狀態
+        function renderGuessBoxes() {
+            const boxes = document.querySelectorAll('.guess-digit-box');
+            boxes.forEach((box, idx) => {
+                const val = state.guessInput[idx] || '';
+                box.textContent = val;
+                if (val) {
+                    box.classList.add('border-sky-500', 'bg-slate-900');
+                    box.classList.remove('border-slate-700', 'bg-slate-950');
+                } else {
+                    box.classList.remove('border-sky-500', 'bg-slate-900');
+                    box.classList.add('border-slate-700', 'bg-slate-950');
+                }
+            });
+
+            const isMyTurn = isCurrentUserTurn();
+            document.querySelectorAll('#game-keypad .keypad-btn').forEach(btn => {
+                btn.disabled = !isMyTurn || state.guessInput.includes(btn.dataset.digit) || state.guessInput.length >= 4;
+            });
+
+            const submitBtn = document.getElementById('btn-submit-guess');
+            submitBtn.disabled = !isMyTurn || state.guessInput.length !== 4;
+        }
+
+        // ==========================================
+        // 6. 房間建立、加入與即時監聽邏輯
+        // ==========================================
+        function getPlayerNickname() {
+            const raw = document.getElementById('input-nickname').value.trim();
+            if (raw) return raw;
+            return `玩家_${state.userId.slice(0, 4).toUpperCase()}`;
+        }
+
+        // 建立新房間
+        async function createRoom() {
+            if (!isConfigReady || !db) {
+                showToast('尚未填入連線設定！請先在程式碼第 1 區貼上 Firebase 設定即可在 GitHub 運作', 'warning');
+                return;
+            }
+            if (!state.user) return;
+            soundFX.playClick();
+            state.nickname = getPlayerNickname();
+
+            const btn = document.getElementById('btn-create-room');
+            btn.disabled = true;
+            btn.textContent = '建立房間中...';
+
+            try {
+                let code = generateRoomCode();
+                let roomRef = getRoomDocRef(code);
+                let snap = await getDoc(roomRef);
+                
+                // 確保房號不重複
+                while (snap.exists()) {
+                    code = generateRoomCode();
+                    roomRef = getRoomDocRef(code);
+                    snap = await getDoc(roomRef);
+                }
+
+                const initialRoomData = {
+                    roomId: code,
+                    status: 'setup', // setup | playing | finished
+                    createdAt: Date.now(),
+                    round: 1,
+                    p1: {
+                        uid: state.userId,
+                        name: state.nickname,
+                        secret: '',
+                        ready: false,
+                        guesses: []
+                    },
+                    p2: null,
+                    firstTurn: null,   // 'p1' or 'p2'
+                    currentTurn: null, // 'p1' or 'p2'
+                    winner: null       // 'p1' or 'p2'
+                };
+
+                await setDoc(roomRef, initialRoomData);
+                subscribeToRoom(code);
+                showToast(`已建立房間 ${code}！快邀請朋友加入吧`, 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('建立房間失敗，請稍後再試', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg> 建立新對戰房間`;
+            }
+        }
+
+        // 加入現有房間
+        async function joinRoom() {
+            if (!isConfigReady || !db) {
+                showToast('尚未填入連線設定！請先在程式碼第 1 區貼上 Firebase 設定即可在 GitHub 運作', 'warning');
+                return;
+            }
+            if (!state.user) return;
+            soundFX.playClick();
+            const code = document.getElementById('input-room-code').value.trim().toUpperCase();
+            if (code.length < 4) {
+                showToast('請輸入正確的房間代碼', 'warning');
+                return;
+            }
+
+            state.nickname = getPlayerNickname();
+            const btn = document.getElementById('btn-join-room');
+            btn.disabled = true;
+
+            try {
+                const roomRef = getRoomDocRef(code);
+                const snap = await getDoc(roomRef);
+
+                if (!snap.exists()) {
+                    showToast('找不到此房間，請確認房號是否正確', 'error');
+                    return;
+                }
+
+                const data = snap.data();
+
+                // 若自己已經在房間內（重新整理或重連）
+                if (data.p1?.uid === state.userId || data.p2?.uid === state.userId) {
+                    subscribeToRoom(code);
+                    showToast('已重新連線至房間！', 'success');
+                    return;
+                }
+
+                // 檢查房間是否已滿
+                if (data.p2 !== null) {
+                    showToast('此房間人數已滿（2/2）', 'error');
+                    return;
+                }
+
+                // 作為玩家 2 加入
+                await updateDoc(roomRef, {
+                    p2: {
+                        uid: state.userId,
+                        name: state.nickname,
+                        secret: '',
+                        ready: false,
+                        guesses: []
+                    }
+                });
+
+                subscribeToRoom(code);
+                showToast(`成功加入房間 ${code}！`, 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('加入房間時發生錯誤', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // 訂閱房間即時資料變化
+        function subscribeToRoom(roomId) {
+            if (state.unsubscribeRoom) {
+                state.unsubscribeRoom();
+            }
+
+            state.roomId = roomId;
+            state.secretInput = [];
+            state.guessInput = [];
+            state.notesMatrix = Array.from({ length: 10 }, () => [0, 0, 0, 0]);
+            state.freeformNote = '';
+            const noteInputEl = document.getElementById('input-freeform-note');
+            if (noteInputEl) noteInputEl.value = '';
+            state.lastTurnNotified = null;
+            renderSecretBoxes();
+            renderScratchpad();
+
+            const roomRef = getRoomDocRef(roomId);
+            state.unsubscribeRoom = onSnapshot(roomRef, (docSnap) => {
+                if (!docSnap.exists()) {
+                    showToast('房間已關閉', 'warning');
+                    leaveRoomLocal();
+                    return;
+                }
+
+                const prevData = state.roomData;
+                const newData = docSnap.data();
+                state.roomData = newData;
+
+                handleRoomStateUpdate(prevData, newData);
+            }, (error) => {
+                console.error("Firestore onSnapshot error:", error);
+                showToast('連線同步異常，請檢查網路', 'error');
+            });
+        }
+
+        // 離開房間清理本地狀態
+        function leaveRoomLocal() {
+            if (state.unsubscribeRoom) {
+                state.unsubscribeRoom();
+                state.unsubscribeRoom = null;
+            }
+            state.roomId = null;
+            state.roomData = null;
+            state.secretInput = [];
+            state.guessInput = [];
+            switchView('lobby');
+        }
+
+        // 判斷目前玩家是 p1 還是 p2
+        function getMyRole() {
+            if (!state.roomData || !state.userId) return null;
+            if (state.roomData.p1?.uid === state.userId) return 'p1';
+            if (state.roomData.p2?.uid === state.userId) return 'p2';
+            return null;
+        }
+
+        function isCurrentUserTurn() {
+            const role = getMyRole();
+            return state.roomData?.status === 'playing' && role && state.roomData.currentTurn === role;
+        }
+
+        // ==========================================
+        // 7. 核心遊戲狀態機與 UI 渲染
+        // ==========================================
+        function handleRoomStateUpdate(prevData, data) {
+            const myRole = getMyRole();
+            if (!myRole) return;
+
+            // --- 階段 A: 準備與設定秘密數字 (setup) ---
+            if (data.status === 'setup') {
+                // 若是從上一局 finished 進入新一局 setup，重置本地輸入與筆記
+                if (prevData && prevData.status === 'finished') {
+                    state.secretInput = [];
+                    state.guessInput = [];
+                    state.notesMatrix = Array.from({ length: 10 }, () => [0, 0, 0, 0]);
+                    state.freeformNote = '';
+                    const noteInputEl = document.getElementById('input-freeform-note');
+                    if (noteInputEl) noteInputEl.value = '';
+                    state.showMySecret = false;
+                    renderSecretBoxes();
+                    renderScratchpad();
+                    showToast(`第 ${data.round} 局開始！請重新設定你的謎底`, 'info');
+                }
+
+                switchView('setup');
+                renderSetupView(data, myRole);
+                return;
+            }
+
+            // --- 階段 B: 對戰中 (playing) ---
+            if (data.status === 'playing') {
+                switchView('game');
+                
+                // 剛開局通知先後攻順序
+                if (prevData && prevData.status === 'setup') {
+                    const starterName = data.firstTurn === 'p1' ? data.p1.name : data.p2.name;
+                    const isMeFirst = data.firstTurn === myRole;
+                    showToast(`隨機抽籤結果：由「${starterName}」(${isMeFirst ? '你' : '對手'}) 先攻！`, 'success');
+                }
+
+                // 輪到自己時播放提示音
+                const turnKey = `${data.round}-${data.currentTurn}-${data.p1.guesses.length + data.p2.guesses.length}`;
+                if (data.currentTurn === myRole && state.lastTurnNotified !== turnKey) {
+                    state.lastTurnNotified = turnKey;
+                    soundFX.playYourTurn();
+                }
+
+                renderGameView(data, myRole);
+                return;
+            }
+
+            // --- 階段 C: 遊戲結束 (finished) ---
+            if (data.status === 'finished') {
+                switchView('game');
+                if (prevData && prevData.status === 'playing') {
+                    if (data.winner === myRole) {
+                        soundFX.playWin();
+                    } else {
+                        soundFX.playLose();
+                    }
+                }
+                renderGameView(data, myRole);
+            }
+        }
+
+        // 渲染設定畫面
+        function renderSetupView(data, myRole) {
+            document.getElementById('display-room-code').textContent = data.roomId;
+
+            // P1 資訊
+            document.getElementById('p1-name-setup').textContent = data.p1.name;
+            document.getElementById('p1-you-badge').classList.toggle('hidden', myRole !== 'p1');
+            const p1Status = document.getElementById('p1-ready-status');
+            if (data.p1.ready) {
+                p1Status.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> <span class="text-emerald-400 font-bold">已完成設定 (準備就緒)</span>`;
+            } else {
+                p1Status.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> 設定數字中...`;
+            }
+
+            // P2 資訊
+            const p2NameEl = document.getElementById('p2-name-setup');
+            const p2Status = document.getElementById('p2-ready-status');
+            document.getElementById('p2-you-badge').classList.toggle('hidden', myRole !== 'p2');
+
+            if (data.p2) {
+                p2NameEl.textContent = data.p2.name;
+                p2NameEl.classList.remove('text-slate-500');
+                p2NameEl.classList.add('text-white');
+
+                if (data.p2.ready) {
+                    p2Status.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> <span class="text-emerald-400 font-bold">已完成設定 (準備就緒)</span>`;
+                } else {
+                    p2Status.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> 設定數字中...`;
+                }
+            } else {
+                p2NameEl.textContent = '等待對手加入...';
+                p2NameEl.classList.add('text-slate-500');
+                p2NameEl.classList.remove('text-white');
+                p2Status.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-600"></span> 尚未連線`;
+            }
+
+            // 檢查自己是否已鎖定謎底
+            const myData = data[myRole];
+            const lockBtn = document.getElementById('btn-lock-secret');
+            const randomBtn = document.getElementById('btn-random-secret');
+            const keypadBtns = document.querySelectorAll('#setup-keypad button');
+
+            if (myData.ready) {
+                state.secretInput = myData.secret.split('');
+                renderSecretBoxes();
+                lockBtn.disabled = true;
+                lockBtn.textContent = data.p2 ? '已鎖定！等待對手完成設定...' : '已鎖定！等待對手加入房間...';
+                randomBtn.disabled = true;
+                keypadBtns.forEach(b => b.disabled = true);
+            } else {
+                lockBtn.disabled = false;
+                lockBtn.textContent = '鎖定秘密數字並準備';
+                randomBtn.disabled = false;
+                renderSecretBoxes();
+            }
+
+            // 狀態提示文字
+            const banner = document.getElementById('setup-status-banner');
+            if (!data.p2) {
+                banner.textContent = '請將房號傳給好友，等待加入...';
+            } else if (!data.p1.ready || !data.p2.ready) {
+                banner.textContent = '雙方皆已連線，請設定 4 位不重複數字';
+            } else {
+                banner.textContent = '雙方準備完成，正在隨機抽籤先後攻...';
+            }
+        }
+
+        // 鎖定自己的謎底數字 (若雙方皆準備好，則同時隨機決定先攻並開局)
+        async function lockSecretNumber() {
+            if (state.secretInput.length !== 4) {
+                showToast('請完整輸入 4 個不重複的數字！', 'warning');
+                return;
+            }
+            // 雙重驗證無重複
+            if (new Set(state.secretInput).size !== 4) {
+                showToast('數字不可重複！', 'error');
+                return;
+            }
+
+            const myRole = getMyRole();
+            const oppRole = myRole === 'p1' ? 'p2' : 'p1';
+            const secretStr = state.secretInput.join('');
+
+            soundFX.playSubmit();
+            const lockBtn = document.getElementById('btn-lock-secret');
+            lockBtn.disabled = true;
+
+            try {
+                const roomRef = getRoomDocRef(state.roomId);
+                // 重新讀取最新房間狀態確保同步準確
+                const snap = await getDoc(roomRef);
+                if (!snap.exists()) return;
+                const latest = snap.data();
+
+                const updates = {
+                    [`${myRole}.secret`]: secretStr,
+                    [`${myRole}.ready`]: true
+                };
+
+                // 若對手已經準備好，由最後按下準備的玩家觸發隨機先後攻並進入 playing 狀態
+                if (latest[oppRole] && latest[oppRole].ready) {
+                    const randomStarter = Math.random() < 0.5 ? 'p1' : 'p2';
+                    updates.status = 'playing';
+                    updates.firstTurn = randomStarter;
+                    updates.currentTurn = randomStarter;
+                }
+
+                await updateDoc(roomRef, updates);
+            } catch (err) {
+                console.error(err);
+                showToast('鎖定失敗，請重試', 'error');
+                lockBtn.disabled = false;
+            }
+        }
+
+        // 渲染對戰與結算畫面
+        function renderGameView(data, myRole) {
+            const oppRole = myRole === 'p1' ? 'p2' : 'p1';
+            const myData = data[myRole];
+            const oppData = data[oppRole];
+
+            // 顯示自己的謎底
+            const secretEl = document.getElementById('my-secret-display');
+            secretEl.textContent = state.showMySecret ? myData.secret : '••••';
+
+            // 頂部回合橫幅
+            const turnBanner = document.getElementById('turn-banner');
+            const turnDot = document.getElementById('turn-indicator-dot');
+            const turnTitle = document.getElementById('turn-title');
+            const turnSubtitle = document.getElementById('turn-subtitle');
+            const firstBadge = document.getElementById('first-player-badge');
+            const gameoverPanel = document.getElementById('gameover-panel');
+            const guessInputCard = document.getElementById('guess-input-card');
+
+            const starterName = data.firstTurn === myRole ? '你先攻' : `${oppData.name} 先攻`;
+            firstBadge.textContent = `第 ${data.round} 局 • 隨機抽籤：${starterName}`;
+
+            if (data.status === 'playing') {
+                gameoverPanel.classList.add('hidden');
+                guessInputCard.classList.remove('opacity-60');
+
+                if (data.currentTurn === myRole) {
+                    turnBanner.className = 'rounded-2xl p-4 border transition-all duration-300 flex flex-col sm:flex-row items-center justify-between gap-3 bg-sky-950/60 border-sky-500/70 turn-active-glow';
+                    turnDot.className = 'w-3.5 h-3.5 rounded-full bg-sky-400 animate-ping';
+                    turnTitle.textContent = '輪到你了！請猜測';
+                    turnTitle.className = 'text-lg sm:text-xl font-extrabold text-sky-300';
+                    turnSubtitle.textContent = `請輸入 4 個不重複數字猜測「${oppData.name}」的謎底`;
+                } else {
+                    turnBanner.className = 'rounded-2xl p-4 border transition-all duration-300 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/90 border-slate-800';
+                    turnDot.className = 'w-3.5 h-3.5 rounded-full bg-amber-400 animate-pulse';
+                    turnTitle.textContent = `等待 ${oppData.name} 思考中...`;
+                    turnTitle.className = 'text-lg sm:text-xl font-extrabold text-slate-300';
+                    turnSubtitle.textContent = '你可以先在下方「推理筆記本」標記線索';
+                }
+            } else if (data.status === 'finished') {
+                turnBanner.className = 'rounded-2xl p-4 border bg-slate-900 border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3';
+                turnDot.className = 'w-3.5 h-3.5 rounded-full bg-emerald-400';
+                turnTitle.textContent = '本局對戰已結束';
+                turnTitle.className = 'text-lg sm:text-xl font-extrabold text-white';
+                turnSubtitle.textContent = '點擊下方「再來一局」可重新開始並再次隨機抽籤先後攻';
+                guessInputCard.classList.add('opacity-60');
+
+                // 顯示結算勝利卡片
+                gameoverPanel.classList.remove('hidden');
+                const isWinner = data.winner === myRole;
+                document.getElementById('winner-title').textContent = isWinner ? '🎉 恭喜你獲勝了！' : `😢 ${oppData.name} 獲勝！`;
+                document.getElementById('winner-title').className = `text-2xl sm:text-3xl font-black ${isWinner ? 'text-amber-400' : 'text-slate-200'}`;
+                document.getElementById('winner-subtitle').textContent = isWinner
+                    ? `你只用了 ${myData.guesses.length} 次就破解了對手的秘密數字！`
+                    : `對手用了 ${oppData.guesses.length} 次猜出了你的秘密數字`;
+
+                document.getElementById('reveal-p1-name').textContent = `${data.p1.name} ${myRole === 'p1' ? '(你)' : ''}`;
+                document.getElementById('reveal-p1-secret').textContent = data.p1.secret;
+                document.getElementById('reveal-p2-name').textContent = `${data.p2.name} ${myRole === 'p2' ? '(你)' : ''}`;
+                document.getElementById('reveal-p2-secret').textContent = data.p2.secret;
+            }
+
+            // 更新嘗試次數與輸入框狀態
+            document.getElementById('guess-turn-count').textContent = `第 ${myData.guesses.length + 1} 次嘗試`;
+            renderGuessBoxes();
+
+            // 更新雙方歷史紀錄列表
+            document.getElementById('header-my-name').textContent = `${myData.name} (你)`;
+            document.getElementById('badge-my-count').textContent = `${myData.guesses.length} 次`;
+            renderGuessList('list-my-guesses', myData.guesses, true);
+
+            document.getElementById('header-opp-name').textContent = `${oppData.name} (對手)`;
+            document.getElementById('badge-opp-count').textContent = `${oppData.guesses.length} 次`;
+            renderGuessList('list-opp-guesses', oppData.guesses, false);
+        }
+
+        // 渲染單側歷史猜測列表 (最新在最上方，我的紀錄支援與筆記本連動變色)
+        function renderGuessList(containerId, guesses, linkNotebook = false) {
+            const container = document.getElementById(containerId);
+            if (!guesses || guesses.length === 0) {
+                container.innerHTML = `<div class="text-center text-xs text-slate-500 py-10">尚無猜測紀錄</div>`;
+                return;
+            }
+
+            // 複製並反轉，讓最新一筆顯示在最上方
+            const reversed = [...guesses].map((item, idx) => ({ ...item, turn: idx + 1 })).reverse();
+            container.innerHTML = reversed.map(item => {
+                const isWin = item.a === 4;
+                const rowStyle = isWin
+                    ? 'bg-emerald-950/60 border-emerald-500/60'
+                    : 'bg-slate-900/90 border-slate-800';
+
+                const digitsHtml = item.guess.split('').map((ch, posIdx) => {
+                    const digitStyle = linkNotebook ? getHistoryDigitBadgeStyle(ch, posIdx) : 'text-white';
+                    return `<span class="inline-block transition-colors ${digitStyle}">${ch}</span>`;
+                }).join('');
+
+                return `
+                    <div class="flex items-center justify-between px-3 py-2 rounded-xl border ${rowStyle}">
+                        <div class="flex items-center gap-2.5">
+                            <span class="text-[11px] font-mono-num text-slate-500 w-6">#${item.turn}</span>
+                            <div class="flex items-center gap-1 font-mono-num text-lg font-extrabold">
+                                ${digitsHtml}
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1 font-mono-num text-sm font-extrabold">
+                            <span class="px-2 py-0.5 rounded-md ${item.a > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}">${item.a}A</span>
+                            <span class="px-2 py-0.5 rounded-md ${item.b > 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-400'}">${item.b}B</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 送出猜測
+        async function submitGuess() {
+            if (!isCurrentUserTurn()) return;
+            if (state.guessInput.length !== 4 || new Set(state.guessInput).size !== 4) {
+                showToast('請輸入 4 個不重複的數字！', 'warning');
+                return;
+            }
+
+            const myRole = getMyRole();
+            const oppRole = myRole === 'p1' ? 'p2' : 'p1';
+            const guessStr = state.guessInput.join('');
+            const oppSecret = state.roomData[oppRole].secret;
+
+            const { a, b } = calculateAB(oppSecret, guessStr);
+            const newRecord = {
+                guess: guessStr,
+                a,
+                b,
+                timestamp: Date.now()
+            };
+
+            soundFX.playSubmit();
+            const submitBtn = document.getElementById('btn-submit-guess');
+            submitBtn.disabled = true;
+
+            try {
+                const updatedGuesses = [...state.roomData[myRole].guesses, newRecord];
+                const updates = {
+                    [`${myRole}.guesses`]: updatedGuesses
+                };
+
+                if (a === 4) {
+                    // 猜中 4A0B，遊戲結束！
+                    updates.status = 'finished';
+                    updates.winner = myRole;
+                } else {
+                    // 換對手回合
+                    updates.currentTurn = oppRole;
+                }
+
+                state.guessInput = [];
+                renderGuessBoxes();
+
+                const roomRef = getRoomDocRef(state.roomId);
+                await updateDoc(roomRef, updates);
+            } catch (err) {
+                console.error(err);
+                showToast('送出猜測失敗，請重試', 'error');
+                renderGuessBoxes();
+            }
+        }
+
+        // 再來一局 (重置盤面並回到設定秘密數字階段，重新隨機先後攻)
+        async function requestRematch() {
+            if (!state.roomId || !state.roomData) return;
+            soundFX.playClick();
+
+            const btn = document.getElementById('btn-rematch');
+            btn.disabled = true;
+            btn.textContent = '正在重置房間...';
+
+            try {
+                const roomRef = getRoomDocRef(state.roomId);
+                await updateDoc(roomRef, {
+                    status: 'setup',
+                    round: (state.roomData.round || 1) + 1,
+                    'p1.secret': '',
+                    'p1.ready': false,
+                    'p1.guesses': [],
+                    'p2.secret': '',
+                    'p2.ready': false,
+                    'p2.guesses': [],
+                    firstTurn: null,
+                    currentTurn: null,
+                    winner: null
+                });
+            } catch (err) {
+                console.error(err);
+                showToast('重置失敗，請稍後再試', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '再來一局（重新隨機先後攻）';
+            }
+        }
+
+        // ==========================================
+        // 8. 事件監聽綁定 (點擊、複製、實體鍵盤支援)
+        // ==========================================
+        function bindEvents() {
+            // 規則彈窗
+            document.getElementById('btn-rules').addEventListener('click', () => {
+                soundFX.playClick();
+                document.getElementById('modal-rules').classList.remove('hidden');
+            });
+            ['btn-close-rules', 'btn-confirm-rules'].forEach(id => {
+                document.getElementById(id).addEventListener('click', () => {
+                    soundFX.playClick();
+                    document.getElementById('modal-rules').classList.add('hidden');
+                });
+            });
+
+            // 音效切換
+            document.getElementById('btn-sound-toggle').addEventListener('click', () => {
+                state.soundEnabled = !state.soundEnabled;
+                document.getElementById('icon-sound-on').classList.toggle('hidden', !state.soundEnabled);
+                document.getElementById('icon-sound-off').classList.toggle('hidden', state.soundEnabled);
+                if (state.soundEnabled) soundFX.playClick();
+            });
+
+            // 大廳按鈕
+            document.getElementById('btn-create-room').addEventListener('click', createRoom);
+            document.getElementById('btn-join-room').addEventListener('click', joinRoom);
+            document.getElementById('input-room-code').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') joinRoom();
+            });
+
+            // 離開房間
+            document.getElementById('btn-leave-room').addEventListener('click', () => {
+                soundFX.playClick();
+                leaveRoomLocal();
+                showToast('已離開對戰房間', 'info');
+            });
+
+            // 複製房號 (使用相容 iFrame 的 execCommand)
+            document.getElementById('btn-copy-code').addEventListener('click', () => {
+                if (!state.roomId) return;
+                soundFX.playClick();
+                const tempInput = document.createElement('input');
+                tempInput.value = state.roomId;
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                try {
+                    document.execCommand('copy');
+                    showToast(`已複製房間代碼：${state.roomId}`, 'success');
+                } catch (err) {
+                    showToast('複製失敗，請手動選取房號', 'error');
+                }
+                document.body.removeChild(tempInput);
+            });
+
+            // 設定階段：隨機產生謎底 & 鎖定謎底
+            document.getElementById('btn-random-secret').addEventListener('click', () => {
+                soundFX.playClick();
+                state.secretInput = generateRandom4Digits();
+                renderSecretBoxes();
+            });
+            document.getElementById('btn-lock-secret').addEventListener('click', lockSecretNumber);
+
+            // 切換顯示/隱藏自己的謎底
+            document.getElementById('btn-toggle-my-secret').addEventListener('click', () => {
+                soundFX.playClick();
+                state.showMySecret = !state.showMySecret;
+                if (state.roomData && getMyRole()) {
+                    const mySecret = state.roomData[getMyRole()].secret;
+                    document.getElementById('my-secret-display').textContent = state.showMySecret ? mySecret : '••••';
+                }
+            });
+
+            // 對戰階段：送出猜測 & 重置筆記 & 一鍵填入鎖定數字 & 再來一局
+            document.getElementById('btn-submit-guess').addEventListener('click', submitGuess);
+            document.getElementById('btn-reset-notes').addEventListener('click', () => {
+                soundFX.playClick();
+                state.notesMatrix = Array.from({ length: 10 }, () => [0, 0, 0, 0]);
+                state.freeformNote = '';
+                const noteInputEl = document.getElementById('input-freeform-note');
+                if (noteInputEl) noteInputEl.value = '';
+                renderScratchpad();
+                refreshHistoryHighlights();
+                showToast('已清空推理筆記本', 'info');
+            });
+
+            document.getElementById('btn-apply-locked').addEventListener('click', () => {
+                soundFX.playClick();
+                const locked = [];
+                for (let col = 0; col < 4; col++) {
+                    for (let digit = 0; digit <= 9; digit++) {
+                        if (state.notesMatrix[digit][col] === 2) {
+                            locked.push(String(digit));
+                        }
+                    }
+                }
+                if (locked.length === 0) return;
+                // 若 4 位皆已鎖定則直接填入；若部分鎖定則先填入已鎖定的不重複數字供玩家補齊
+                state.guessInput = [...new Set(locked)].slice(0, 4);
+                renderGuessBoxes();
+                showToast(locked.length === 4 ? '已將鎖定的 4 位數字填入猜測框！' : `已填入 ${locked.length} 個鎖定數字，請補齊其餘位數`, 'success');
+            });
+
+            document.getElementById('input-freeform-note').addEventListener('input', (e) => {
+                state.freeformNote = e.target.value;
+            });
+
+            document.getElementById('btn-rematch').addEventListener('click', requestRematch);
+
+            // 手機版歷史紀錄頁籤切換
+            const tabMy = document.getElementById('tab-my-logs');
+            const tabOpp = document.getElementById('tab-opp-logs');
+            const colMy = document.getElementById('col-my-logs');
+            const colOpp = document.getElementById('col-opp-logs');
+
+            tabMy.addEventListener('click', () => {
+                tabMy.className = 'px-3 py-1 rounded-lg text-xs font-bold bg-sky-600 text-white';
+                tabOpp.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400';
+                colMy.classList.remove('hidden');
+                colOpp.classList.add('hidden');
+            });
+
+            tabOpp.addEventListener('click', () => {
+                tabOpp.className = 'px-3 py-1 rounded-lg text-xs font-bold bg-indigo-600 text-white';
+                tabMy.className = 'px-3 py-1 rounded-lg text-xs font-bold text-slate-400';
+                colOpp.classList.remove('hidden');
+                colOpp.classList.add('flex');
+                colMy.classList.add('hidden');
+            });
+
+            // 支援電腦實體鍵盤輸入 (0-9, Backspace, Enter)
+            window.addEventListener('keydown', (e) => {
+                // 若正在輸入暱稱、房號或自由備忘欄，不攔截鍵盤
+                const tag = document.activeElement?.tagName;
+                if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+                const status = state.roomData?.status;
+                const myRole = getMyRole();
+
+                // 設定階段鍵盤支援
+                if (status === 'setup' && myRole && !state.roomData[myRole].ready) {
+                    if (/^[0-9]$/.test(e.key)) {
+                        if (state.secretInput.length < 4 && !state.secretInput.includes(e.key)) {
+                            soundFX.playClick();
+                            state.secretInput.push(e.key);
+                            renderSecretBoxes();
+                        }
+                    } else if (e.key === 'Backspace') {
+                        soundFX.playClick();
+                        state.secretInput.pop();
+                        renderSecretBoxes();
+                    } else if (e.key === 'Enter' && state.secretInput.length === 4) {
+                        lockSecretNumber();
+                    }
+                }
+
+                // 對戰階段鍵盤支援
+                if (status === 'playing' && isCurrentUserTurn()) {
+                    if (/^[0-9]$/.test(e.key)) {
+                        if (state.guessInput.length < 4 && !state.guessInput.includes(e.key)) {
+                            soundFX.playClick();
+                            state.guessInput.push(e.key);
+                            renderGuessBoxes();
+                        }
+                    } else if (e.key === 'Backspace') {
+                        soundFX.playClick();
+                        state.guessInput.pop();
+                        renderGuessBoxes();
+                    } else if (e.key === 'Enter' && state.guessInput.length === 4) {
+                        submitGuess();
+                    }
+                }
+            });
+        }
+
+        // ==========================================
+        // 9. 應用程式啟動入口 (遵守 Auth Before Queries 規範)
+        // ==========================================
+        async function initApp() {
+            buildKeypad('setup-keypad', 'secretInput', renderSecretBoxes);
+            buildKeypad('game-keypad', 'guessInput', renderGuessBoxes);
+            renderScratchpad();
+            bindEvents();
+
+            // 若在 GitHub Pages 獨立開啟且尚未填入連線金鑰，直接進入大廳並提示
+            if (!isConfigReady) {
+                switchView('lobby');
+                showToast('目前為單機介面模式：若要開啟線上雙人連線，請填入 Firebase 設定', 'warning');
+                return;
+            }
+
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Authentication failed:", error);
+                showToast('身份驗證失敗，請確認已開啟匿名登入功能', 'error');
+                switchView('lobby');
+            }
+
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    state.user = user;
+                    state.userId = user.uid;
+                    switchView('lobby');
+                }
+            });
+        }
+
+        window.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
